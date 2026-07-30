@@ -1,0 +1,9 @@
+path: ../data/datasets/smoking
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: cigarette
+  1: lighter
+  2: smoke

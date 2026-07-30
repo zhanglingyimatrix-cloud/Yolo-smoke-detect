@@ -1,0 +1,60 @@
+project:
+  name: smoking-recognition
+  output_dir: data/outputs
+
+video:
+  source: data/videos/test.mp4
+  img_size: 960
+  sample_fps: 10
+  display: true
+  save_video: true
+
+models:
+  person_detector: yolo11n.pt
+  pose_model: yolo11n-pose.pt
+  cigarette_detector: data/models/cigarette.pt
+
+device:
+  type: cpu
+  half: false
+
+detection:
+  person_conf: 0.45
+  cigarette_conf: 0.35
+  iou: 0.5
+  classes:
+    person: 0
+
+pose:
+  keypoint_conf: 0.35
+  hand_to_mouth_distance_ratio: 0.18
+  min_valid_keypoints: 8
+
+temporal:
+  window_seconds: 8
+  min_hand_to_mouth_hits: 12
+  min_cigarette_hits: 2
+  min_event_duration_seconds: 3
+  cooldown_seconds: 20
+
+rules:
+  enable_time_rule: true
+  allowed_smoking_periods:
+    - "12:00-12:30"
+    - "18:00-18:30"
+  alarm_only_outside_allowed_period: true
+
+roi:
+  enabled: false
+  polygon:
+    - [0, 0]
+    - [1920, 0]
+    - [1920, 1080]
+    - [0, 1080]
+
+alarm:
+  smoking_score_threshold: 0.78
+  save_snapshot: true
+  save_clip: true
+  clip_pre_seconds: 5
+  clip_post_seconds: 5

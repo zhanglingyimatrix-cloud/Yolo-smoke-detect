@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# YOLO / training outputs
+runs/
+wandb/
+mlruns/
+*.cache
+*.tmp
+
+# Generated outputs
+data/outputs/
+
+# Raw data / videos / datasets
+data/videos/
+data/raw/
+data/images/
+data/labels/
+data/datasets/
+datasets/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.torchscript
+*.tflite
+*.mlpackage
+*.safetensors
+
+# Installers and archives
+*.exe
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# Logs
+*.log
+
+# Local application caches/settings
+configs/matplotlib/
+configs/ultralytics/
