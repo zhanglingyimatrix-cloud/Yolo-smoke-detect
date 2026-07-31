@@ -1112,6 +1112,26 @@ def draw_overlay(
                 cv2.LINE_AA,
             )
 
+        for detection in person.detail_model_detections:
+            dx1, dy1, dx2, dy2 = [int(round(value)) for value in detection["global_xyxy"]]
+            dx1 = max(0, min(annotated.shape[1] - 1, dx1))
+            dx2 = max(0, min(annotated.shape[1] - 1, dx2))
+            dy1 = max(0, min(annotated.shape[0] - 1, dy1))
+            dy2 = max(0, min(annotated.shape[0] - 1, dy2))
+            if dx2 <= dx1 or dy2 <= dy1:
+                continue
+            cv2.rectangle(annotated, (dx1, dy1), (dx2, dy2), color_alarm, 2)
+            cv2.putText(
+                annotated,
+                f"{detection['class_name']} {detection['conf']:.2f}",
+                (dx1, max(18, dy1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.48,
+                color_alarm,
+                2,
+                cv2.LINE_AA,
+            )
+
     status = "ALARM" if alarm else "monitoring"
     status_color = color_alarm if alarm else (255, 255, 255)
     cv2.rectangle(annotated, (8, 8), (430, 76), (0, 0, 0), -1)
@@ -1409,12 +1429,16 @@ def main() -> None:
             focus_ratio = focus_hits / len(window)
             fingertip_ratio = fingertip_hits / len(window)
             cigarette_ratio = cigarette_hits / len(window)
-            last_temporal_score = (
-                0.42 * hand_ratio + 0.30 * fingertip_ratio + 0.12 * focus_ratio + 0.16 * cigarette_ratio
-            )
-            last_alarm = hand_hits >= min_hand_hits and last_temporal_score >= threshold
             if cigarette_model_available:
-                last_alarm = last_alarm and cigarette_hits >= min_cigarette_hits
+                warning_ratio = detail_hits / len(window)
+                depth_ratio = depth_consistent_hits / len(window)
+                last_temporal_score = 0.20 * warning_ratio + 0.20 * depth_ratio + 0.60 * cigarette_ratio
+                last_alarm = detail_hits > 0 and cigarette_hits >= min_cigarette_hits
+            else:
+                last_temporal_score = (
+                    0.42 * hand_ratio + 0.30 * fingertip_ratio + 0.12 * focus_ratio + 0.16 * cigarette_ratio
+                )
+                last_alarm = hand_hits >= min_hand_hits and last_temporal_score >= threshold
 
             if last_alarm:
                 alarm_frames += 1
