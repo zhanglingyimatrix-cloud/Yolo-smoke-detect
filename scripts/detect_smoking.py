@@ -643,39 +643,60 @@ def run_detail_model_on_focus(
     max_saved_crops = int(detail_cfg.get("max_saved_crops", 300))
     model_imgsz = int(detail_cfg.get("model_img_size", fallback_imgsz))
     conf = float(cfg["detection"]["cigarette_conf"])
+    depth_cfg = cfg.get("depth", {})
+    require_depth_match = bool(depth_cfg.get("require_depth_consistency_for_detail", True))
 
     for person_idx, person in enumerate(people):
-        person.detail_trigger = person.hand_hit or person.fingertip_to_mouth_hit or person.hand_to_face_hit
-        if not person.detail_trigger:
-            person.detail_model_status = "not_triggered"
+        distance_candidate = person.fingertip_to_mouth_hit
+        if not distance_candidate:
+            person.detail_trigger = False
+            person.detail_model_status = "distance_clear"
+            person.label = "person"
+            if not person.cigarette_hit:
+                person.score = 0.0
             continue
 
         crop_box = focus_roi_box(person, width, height, crop_scale)
         person.detail_crop_box = crop_box
         if crop_box is None:
+            person.detail_trigger = False
             person.detail_model_status = "no_crop"
             continue
 
         x1, y1, x2, y2 = crop_box
         crop = frame[y1:y2, x1:x2]
         if crop.size == 0:
+            person.detail_trigger = False
             person.detail_model_status = "empty_crop"
             continue
+
+        run_depth_on_focus_crop(person, crop, crop_box, depth_estimator, cfg, output_dir, frame_idx, person_idx)
+        depth_checked = person.depth_status in ("ok", "ok_low_contrast")
+        if require_depth_match:
+            if depth_checked and person.depth_consistent is False:
+                person.detail_trigger = False
+                person.detail_model_status = "depth_conflict_clear"
+                person.label = "clear_depth_conflict"
+                if not person.cigarette_hit:
+                    person.score = 0.05
+                continue
+            if not (depth_checked and person.depth_consistent is True):
+                person.detail_trigger = False
+                person.detail_model_status = "depth_unconfirmed_clear"
+                person.label = "clear_depth_unconfirmed"
+                if not person.cigarette_hit:
+                    person.score = 0.10
+                continue
+
+        person.detail_trigger = True
+        person.label = "warning_depth_match"
+        person.score = max(person.score, 0.72)
 
         if save_crops and saved_crops < max_saved_crops:
             crop_path = output_dir / "focus_crops" / f"frame_{frame_idx:06d}_person_{person_idx:02d}.jpg"
             if write_image(crop_path, crop):
                 person.detail_crop_path = str(crop_path)
                 saved_crops += 1
-
-        run_depth_on_focus_crop(person, crop, crop_box, depth_estimator, cfg, output_dir, frame_idx, person_idx)
-        if (
-            cfg.get("depth", {}).get("require_depth_consistency_for_detail", True)
-            and person.depth_status in ("ok", "ok_low_contrast")
-            and person.depth_consistent is False
-        ):
-            person.detail_model_status = "depth_conflict_skip_detail_model"
-            continue
 
         if cigarette_model is None:
             person.detail_model_status = "pending_model"
@@ -962,12 +983,18 @@ def draw_overlay(
 
     for person in people:
         color = color_person
+        display_label = "CLEAR"
+        if person.label in ("clear_depth_conflict", "clear_depth_unconfirmed"):
+            display_label = "CLEAR_Z"
+        if person.label == "warning_depth_match":
+            display_label = "WARNING"
+            color = color_suspect
         if person.label.startswith("suspected"):
+            display_label = "REVIEW"
             color = color_suspect
         if person.label == "smoking_evidence":
+            display_label = "SMOKING_MODEL_HIT"
             color = color_alarm
-        if person.label in ("focus_hand_to_face", "focus_fingertip_to_mouth"):
-            color = (0, 220, 255)
 
         x1, y1, x2, y2 = person.box
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
@@ -1021,7 +1048,7 @@ def draw_overlay(
             cv2.line(annotated, person.mouth, nearest_fingertip, (255, 255, 0), 2, cv2.LINE_AA)
         ratio_text = ""
         if person.fingertip_mouth_distance_ratio is not None:
-            hit_text = "HIT" if person.fingertip_to_mouth_hit else "NO"
+            hit_text = "NEAR" if person.fingertip_to_mouth_hit else "FAR"
             ratio_text = (
                 f" tip:{person.nearest_fingertip_hand[0].upper()} "
                 f"{person.fingertip_mouth_distance_ratio:.2f}<={person.fingertip_mouth_threshold:.2f} {hit_text}"
@@ -1035,7 +1062,7 @@ def draw_overlay(
         label_y = y1 - 8 if y1 > 92 else max(92, min(annotated.shape[0] - 48, y2 - 42))
         cv2.putText(
             annotated,
-            f"{person.label} {person.score:.2f}{ratio_text}",
+            f"{display_label} {person.score:.2f}{ratio_text}",
             (x1, label_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -1067,11 +1094,11 @@ def draw_overlay(
             )
         if person.depth_status not in ("not_triggered", "disabled"):
             if person.depth_delta_ratio is not None and person.depth_threshold is not None:
-                depth_hit = "OK" if person.depth_consistent else "Z_CONFLICT"
-                depth_text = f"z={person.depth_delta_ratio:.2f}<={person.depth_threshold:.2f} {depth_hit}"
+                depth_hit = "Z_MATCH" if person.depth_consistent else "Z_CONFLICT"
+                depth_text = f"z_tip_mouth={person.depth_delta_ratio:.2f}<={person.depth_threshold:.2f} {depth_hit}"
             else:
                 depth_text = f"depth={person.depth_status[:34]}"
-            depth_color = (0, 255, 0) if person.depth_consistent else (0, 0, 255)
+            depth_color = color_suspect if person.depth_consistent else (0, 0, 255)
             if person.depth_consistent is None:
                 depth_color = (180, 180, 180)
             cv2.putText(

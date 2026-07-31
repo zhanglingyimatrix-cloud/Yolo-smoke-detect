@@ -39,7 +39,7 @@ depth:
   model: depth-anything/Depth-Anything-V2-Small-hf
   run_on_detail_trigger: true
   hand_mouth_depth_delta_threshold: 0.18
-  sample_radius_ratio: 0.045
+  sample_radius_ratio: 0.025
   min_depth_contrast: 0.03
   require_depth_consistency_for_detail: true
   save_depth_debug: true
