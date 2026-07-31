@@ -25,14 +25,39 @@ detection:
   classes:
     person: 0
 
+detail:
+  enabled: true
+  trigger_on_focus: true
+  save_focus_crops: true
+  crop_scale: 1.35
+  max_saved_crops: 300
+  model_img_size: 640
+
+depth:
+  enabled: true
+  backend: transformers
+  model: depth-anything/Depth-Anything-V2-Small-hf
+  run_on_detail_trigger: true
+  hand_mouth_depth_delta_threshold: 0.18
+  sample_radius_ratio: 0.045
+  min_depth_contrast: 0.03
+  require_depth_consistency_for_detail: true
+  save_depth_debug: true
+
 pose:
   keypoint_conf: 0.35
+  focus_keypoint_conf: 0.05
   hand_to_mouth_distance_ratio: 0.18
+  hand_to_face_distance_ratio: 0.75
+  fingertip_to_mouth_distance_ratio: 0.55
+  fingertip_extension_ratio: 0.38
+  face_box_scale: 2.2
   min_valid_keypoints: 8
 
 temporal:
   window_seconds: 8
   min_hand_to_mouth_hits: 12
+  min_focus_hand_to_face_hits: 5
   min_cigarette_hits: 2
   min_event_duration_seconds: 3
   cooldown_seconds: 20
@@ -54,6 +79,7 @@ roi:
 
 alarm:
   smoking_score_threshold: 0.78
+  pose_only_score_threshold: 0.55
   save_snapshot: true
   save_clip: true
   clip_pre_seconds: 5

@@ -5,7 +5,6 @@ from pathlib import Path
 from time import perf_counter
 
 import cv2
-from ultralytics import YOLO
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +14,8 @@ DEFAULT_OUTPUT_ROOT = ROOT / "data" / "outputs" / "yolo" / "real_samples" / "int
 os.environ.setdefault("YOLO_CONFIG_DIR", str(ROOT / "configs" / "ultralytics"))
 os.environ.setdefault("MPLCONFIGDIR", str(ROOT / "configs" / "matplotlib"))
 os.environ.setdefault("PYTHONUTF8", "1")
+
+from ultralytics import YOLO
 
 
 TASKS = [

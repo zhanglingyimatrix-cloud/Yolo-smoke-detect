@@ -102,6 +102,65 @@ python scripts/run_yolo_mark_real_samples.py --device cuda:1
 data/outputs/yolo/real_samples/intel/
 ```
 
+## 吸烟识别原型
+
+本地先用姿态模型做疑似吸烟识别：
+
+```powershell
+python scripts/detect_smoking.py --source data/videos/real_samples/intel/people-detection.mp4 --device cpu
+```
+
+输出会写入：
+
+```text
+data/outputs/smoking/
+```
+
+当前没有 `data/models/cigarette.pt` 时，脚本使用 `pose_only` 模式，只判断手是否在 3 到 8 秒时间窗口内多次靠近口鼻区域，结果应理解为疑似吸烟。后续训练出香烟/打火机/烟雾小目标模型后，把权重放到：
+
+```text
+data/models/cigarette.pt
+```
+
+同一个脚本会自动切换为 `pose_object` 模式，同时要求姿态证据和小目标证据，误报会明显下降。
+
+当前脚本还会输出 `focus_hand_to_face_frames`。这个字段表示手到脸距离足够近、值得进入细节模型复查的帧数。它使用人体尺度归一化距离，不直接用像素距离，所以能减轻近大远小问题。后续细节模型可以只在这些重点帧的人头/手部附近区域检测 `cigarette`、`smoke` 或 `lighter`。
+
+## 深度过滤
+
+为了减少 2D 画面中手遮挡脸但 Z 方向距离较远造成的误判，脚本支持在黄色候选区域 crop 上运行单目深度模型。当前配置使用：
+
+```yaml
+depth:
+  enabled: true
+  backend: transformers
+  model: depth-anything/Depth-Anything-V2-Small-hf
+```
+
+安装深度依赖：
+
+```bash
+python -m pip install -r requirements-depth.txt
+```
+
+深度模块只在 `detail_trigger=true` 的候选 crop 上运行，不对全视频每一帧运行。结果会写入 JSON：
+
+```text
+depth_status              # ok / missing_dependency / model_unavailable / inference_failed
+depth_consistent          # 手/估算指尖和嘴部深度是否接近
+depth_delta_ratio         # 归一化深度差
+depth_threshold           # 当前阈值
+depth_debug_path          # 可选深度热力图
+```
+
+如果 `require_depth_consistency_for_detail=true`，并且深度模型判断为 Z 方向冲突，脚本会标记：
+
+```text
+detail_model_status: depth_conflict_skip_detail_model
+```
+
+这表示 2D 看起来靠近，但深度不一致，不作为后续强吸烟证据。
+
 ## 微调数据格式
 
 吸烟细分类模型的数据建议采用 YOLO 检测格式，标签先从小目标开始：

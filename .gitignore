@@ -34,6 +34,7 @@ data/raw/
 data/images/
 data/labels/
 data/datasets/
+data/models/
 datasets/
 
 # Model weights
@@ -61,3 +62,4 @@ datasets/
 # Local application caches/settings
 configs/matplotlib/
 configs/ultralytics/
+configs/huggingface/
