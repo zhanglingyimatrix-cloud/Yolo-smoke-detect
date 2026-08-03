@@ -14,3 +14,4 @@ shapely==2.1.2
 filterpy==1.4.5
 lap==0.5.13
 supervision==0.29.1
+pyarrow==17.0.0

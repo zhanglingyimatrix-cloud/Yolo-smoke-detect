@@ -33,6 +33,7 @@ class PersonEvidence:
     fingertip_to_mouth_hit: bool
     hand_hit: bool
     cigarette_hit: bool
+    smoke_hit: bool
     hands: list[dict]
     nearest_hand: str | None
     nearest_fingertip_hand: str | None
@@ -60,6 +61,23 @@ class PersonEvidence:
     depth_debug_path: str | None
     score: float
     label: str
+
+
+SMOKE_CLASS_NAMES = {"smoke", "cigarette_smoke", "tobacco_smoke"}
+CIGARETTE_CLASS_NAMES = {"cigarette", "cigarette_tip", "cigarette_butt", "smoking", "tobacco"}
+
+
+def normalize_class_name(name: str) -> str:
+    return str(name).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def detail_detection_kind(class_name: str) -> str:
+    normalized = normalize_class_name(class_name)
+    if normalized in SMOKE_CLASS_NAMES or "smoke" in normalized:
+        return "smoke"
+    if normalized in CIGARETTE_CLASS_NAMES or "cigarette" in normalized:
+        return "cigarette"
+    return "other"
 
 
 def parse_args() -> argparse.Namespace:
@@ -729,11 +747,17 @@ def run_detail_model_on_focus(
                 }
             )
 
+        for detection in detections:
+            detection["kind"] = detail_detection_kind(detection["class_name"])
+
         person.detail_model_detections = detections
         person.detail_model_hit = bool(detections)
-        person.cigarette_hit = person.cigarette_hit or person.detail_model_hit
+        person.cigarette_hit = person.cigarette_hit or any(
+            detection["kind"] == "cigarette" for detection in detections
+        )
+        person.smoke_hit = person.smoke_hit or any(detection["kind"] == "smoke" for detection in detections)
         person.detail_model_status = "model_ran_detection"
-        person.score = min(1.0, person.score + 0.35)
+        person.score = min(1.0, person.score + (0.35 if person.cigarette_hit else 0.0) + (0.25 if person.smoke_hit else 0.0))
         if person.fingertip_to_mouth_hit or person.hand_hit:
             person.label = "smoking_evidence"
         else:
@@ -904,6 +928,7 @@ def analyze_frame(
                 fingertip_to_mouth_hit=fingertip_to_mouth_hit,
                 hand_hit=bool(wrist_hit_points),
                 cigarette_hit=False,
+                smoke_hit=False,
                 hands=hands,
                 nearest_hand=nearest_hand,
                 nearest_fingertip_hand=nearest_fingertip_hand,
@@ -980,6 +1005,7 @@ def draw_overlay(
     color_alarm = (0, 0, 255)
     color_suspect = (0, 165, 255)
     color_person = (60, 180, 75)
+    color_smoke = (255, 180, 60)
 
     for person in people:
         color = color_person
@@ -1120,14 +1146,15 @@ def draw_overlay(
             dy2 = max(0, min(annotated.shape[0] - 1, dy2))
             if dx2 <= dx1 or dy2 <= dy1:
                 continue
-            cv2.rectangle(annotated, (dx1, dy1), (dx2, dy2), color_alarm, 2)
+            detection_color = color_smoke if detection.get("kind") == "smoke" else color_alarm
+            cv2.rectangle(annotated, (dx1, dy1), (dx2, dy2), detection_color, 2)
             cv2.putText(
                 annotated,
                 f"{detection['class_name']} {detection['conf']:.2f}",
                 (dx1, max(18, dy1 - 6)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.48,
-                color_alarm,
+                detection_color,
                 2,
                 cv2.LINE_AA,
             )
@@ -1217,6 +1244,7 @@ def main() -> None:
     fingertip_to_mouth_frames = 0
     hand_hit_frames = 0
     cigarette_hit_frames = 0
+    smoke_hit_frames = 0
     detail_trigger_frames = 0
     detail_crops_saved = 0
     detail_model_hit_frames = 0
@@ -1259,6 +1287,7 @@ def main() -> None:
             fingertip_to_mouth = any(person.fingertip_to_mouth_hit for person in last_people)
             hand_hit = any(person.hand_hit for person in last_people)
             cigarette_hit = any(person.cigarette_hit for person in last_people)
+            smoke_hit = any(person.smoke_hit for person in last_people)
             detail_trigger = any(person.detail_trigger for person in last_people)
             detail_model_hit = any(person.detail_model_hit for person in last_people)
             depth_checked = any(person.depth_status in ("ok", "ok_low_contrast") for person in last_people)
@@ -1279,6 +1308,8 @@ def main() -> None:
                 hand_hit_frames += 1
             if cigarette_hit:
                 cigarette_hit_frames += 1
+            if smoke_hit:
+                smoke_hit_frames += 1
             if detail_trigger:
                 detail_trigger_frames += 1
             if detail_model_hit:
@@ -1298,6 +1329,7 @@ def main() -> None:
                     "fingertip_to_mouth": fingertip_to_mouth,
                     "hand_hit": hand_hit,
                 "cigarette_hit": cigarette_hit,
+                "smoke_hit": smoke_hit,
                 "detail_trigger": detail_trigger,
                 "detail_model_hit": detail_model_hit,
                 "depth_checked": depth_checked,
@@ -1315,6 +1347,7 @@ def main() -> None:
                         "fingertip_to_mouth_hit": person.fingertip_to_mouth_hit,
                         "hand_hit": person.hand_hit,
                         "cigarette_hit": person.cigarette_hit,
+                        "smoke_hit": person.smoke_hit,
                         "nearest_hand": person.nearest_hand,
                         "nearest_fingertip_hand": person.nearest_fingertip_hand,
                         "hand_face_distance_px": (
@@ -1423,17 +1456,20 @@ def main() -> None:
             focus_hits = sum(1 for item in window if item["focus_hand_to_face"])
             fingertip_hits = sum(1 for item in window if item["fingertip_to_mouth"])
             cigarette_hits = sum(1 for item in window if item["cigarette_hit"])
+            smoke_hits = sum(1 for item in window if item["smoke_hit"])
             detail_hits = sum(1 for item in window if item["detail_trigger"])
             depth_consistent_hits = sum(1 for item in window if item["depth_consistent"])
             hand_ratio = hand_hits / len(window)
             focus_ratio = focus_hits / len(window)
             fingertip_ratio = fingertip_hits / len(window)
             cigarette_ratio = cigarette_hits / len(window)
+            smoke_ratio = smoke_hits / len(window)
             if cigarette_model_available:
                 warning_ratio = detail_hits / len(window)
                 depth_ratio = depth_consistent_hits / len(window)
-                last_temporal_score = 0.20 * warning_ratio + 0.20 * depth_ratio + 0.60 * cigarette_ratio
-                last_alarm = detail_hits > 0 and cigarette_hits >= min_cigarette_hits
+                visual_ratio = max(cigarette_ratio, smoke_ratio)
+                last_temporal_score = 0.20 * warning_ratio + 0.20 * depth_ratio + 0.60 * visual_ratio
+                last_alarm = detail_hits > 0 and (cigarette_hits + smoke_hits) >= min_cigarette_hits
             else:
                 last_temporal_score = (
                     0.42 * hand_ratio + 0.30 * fingertip_ratio + 0.12 * focus_ratio + 0.16 * cigarette_ratio
@@ -1451,6 +1487,7 @@ def main() -> None:
                         "fingertip_to_mouth_hits_in_window": fingertip_hits,
                         "hand_hits_in_window": hand_hits,
                         "cigarette_hits_in_window": cigarette_hits,
+                        "smoke_hits_in_window": smoke_hits,
                         "detail_trigger_hits_in_window": detail_hits,
                         "depth_consistent_hits_in_window": depth_consistent_hits,
                         "mode": "pose_object" if cigarette_model_available else "pose_only",
@@ -1481,6 +1518,7 @@ def main() -> None:
         "fingertip_to_mouth_frames": fingertip_to_mouth_frames,
         "hand_hit_frames": hand_hit_frames,
         "cigarette_hit_frames": cigarette_hit_frames,
+        "smoke_hit_frames": smoke_hit_frames,
         "detail_trigger_frames": detail_trigger_frames,
         "detail_crops_saved": detail_crops_saved,
         "detail_model_hit_frames": detail_model_hit_frames,
