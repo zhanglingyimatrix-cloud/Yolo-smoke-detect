@@ -448,6 +448,42 @@ def focus_roi_box(
     return expand_box(clip_box(roi, frame_width, frame_height), crop_scale, frame_width, frame_height)
 
 
+def face_detail_roi_box(
+    person: PersonEvidence,
+    frame_width: int,
+    frame_height: int,
+    crop_scale: float,
+) -> tuple[int, int, int, int] | None:
+    if person.face_box is not None:
+        return expand_box(clip_box(person.face_box, frame_width, frame_height), crop_scale, frame_width, frame_height)
+
+    if person.mouth is not None:
+        norm = max(box_norm(person.box) * 0.18, 1.0)
+        margin_x = max(28, int(norm * 0.75))
+        margin_y = max(28, int(norm * 0.65))
+        x, y = person.mouth
+        mouth_box = (x - margin_x, y - margin_y, x + margin_x, y + margin_y)
+        return expand_box(clip_box(mouth_box, frame_width, frame_height), crop_scale, frame_width, frame_height)
+
+    return None
+
+
+def detail_model_roi_box(
+    person: PersonEvidence,
+    frame_width: int,
+    frame_height: int,
+    cfg: dict,
+) -> tuple[int, int, int, int] | None:
+    detail_cfg = cfg.get("detail", {})
+    roi_mode = str(detail_cfg.get("roi_mode", "focus")).strip().lower()
+    face_crop_scale = float(detail_cfg.get("face_crop_scale", detail_cfg.get("crop_scale", 1.0)))
+    if roi_mode in {"face", "face_box", "mouth_face"}:
+        return face_detail_roi_box(person, frame_width, frame_height, face_crop_scale)
+
+    crop_scale = float(detail_cfg.get("crop_scale", 1.35))
+    return focus_roi_box(person, frame_width, frame_height, crop_scale)
+
+
 def write_image(path: Path, image: np.ndarray) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     ok, buffer = cv2.imencode(path.suffix or ".jpg", image)
@@ -656,7 +692,7 @@ def run_detail_model_on_focus(
         return saved_crops
 
     height, width = frame.shape[:2]
-    crop_scale = float(detail_cfg.get("crop_scale", 1.35))
+    depth_crop_scale = float(detail_cfg.get("depth_crop_scale", detail_cfg.get("crop_scale", 1.35)))
     save_crops = bool(detail_cfg.get("save_focus_crops", True))
     max_saved_crops = int(detail_cfg.get("max_saved_crops", 300))
     model_imgsz = int(detail_cfg.get("model_img_size", fallback_imgsz))
@@ -674,21 +710,20 @@ def run_detail_model_on_focus(
                 person.score = 0.0
             continue
 
-        crop_box = focus_roi_box(person, width, height, crop_scale)
-        person.detail_crop_box = crop_box
-        if crop_box is None:
+        depth_crop_box = focus_roi_box(person, width, height, depth_crop_scale)
+        if depth_crop_box is None:
             person.detail_trigger = False
-            person.detail_model_status = "no_crop"
+            person.detail_model_status = "no_depth_crop"
             continue
 
-        x1, y1, x2, y2 = crop_box
-        crop = frame[y1:y2, x1:x2]
-        if crop.size == 0:
+        dx1, dy1, dx2, dy2 = depth_crop_box
+        depth_crop = frame[dy1:dy2, dx1:dx2]
+        if depth_crop.size == 0:
             person.detail_trigger = False
-            person.detail_model_status = "empty_crop"
+            person.detail_model_status = "empty_depth_crop"
             continue
 
-        run_depth_on_focus_crop(person, crop, crop_box, depth_estimator, cfg, output_dir, frame_idx, person_idx)
+        run_depth_on_focus_crop(person, depth_crop, depth_crop_box, depth_estimator, cfg, output_dir, frame_idx, person_idx)
         depth_checked = person.depth_status in ("ok", "ok_low_contrast")
         if require_depth_match:
             if depth_checked and person.depth_consistent is False:
@@ -709,6 +744,18 @@ def run_detail_model_on_focus(
         person.detail_trigger = True
         person.label = "warning_depth_match"
         person.score = max(person.score, 0.72)
+
+        crop_box = detail_model_roi_box(person, width, height, cfg)
+        person.detail_crop_box = crop_box
+        if crop_box is None:
+            person.detail_model_status = "no_face_crop"
+            continue
+
+        x1, y1, x2, y2 = crop_box
+        crop = frame[y1:y2, x1:x2]
+        if crop.size == 0:
+            person.detail_model_status = "empty_face_crop"
+            continue
 
         if save_crops and saved_crops < max_saved_crops:
             crop_path = output_dir / "focus_crops" / f"frame_{frame_idx:06d}_person_{person_idx:02d}.jpg"

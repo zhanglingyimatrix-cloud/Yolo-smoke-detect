@@ -28,8 +28,11 @@ detection:
 detail:
   enabled: true
   trigger_on_focus: true
+  roi_mode: face
   save_focus_crops: true
-  crop_scale: 1.35
+  crop_scale: 1.10
+  face_crop_scale: 1.10
+  depth_crop_scale: 1.35
   max_saved_crops: 300
   model_img_size: 640
 

@@ -15,6 +15,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=Path("data/datasets/smoking_detail"))
     parser.add_argument("--include-cigarette", action="store_true", default=True)
     parser.add_argument("--no-cigarette", dest="include_cigarette", action="store_false")
+    parser.add_argument("--balance-cigarette-train", action="store_true", default=True)
+    parser.add_argument("--no-balance-cigarette-train", dest="balance_cigarette_train", action="store_false")
     parser.add_argument("--max-smoke-train", type=int, default=None)
     parser.add_argument("--max-smoke-val", type=int, default=None)
     return parser.parse_args()
@@ -53,6 +55,43 @@ def copy_cigarette_split(src_root: Path, out_root: Path, split: str) -> tuple[in
         label_count += 1
 
     return image_count, label_count
+
+
+def count_positive_label_files(labels_dir: Path, prefix: str) -> int:
+    return sum(
+        1
+        for label in labels_dir.glob(f"{prefix}*.txt")
+        if label.is_file() and label.stat().st_size > 0
+    )
+
+
+def oversample_cigarette_train(out_root: Path, target_positive_images: int) -> tuple[int, int]:
+    images_dir = out_root / "images" / "train"
+    labels_dir = out_root / "labels" / "train"
+    positive_labels = sorted(
+        label for label in labels_dir.glob("cigdet_*.txt") if label.is_file() and label.stat().st_size > 0
+    )
+    if not positive_labels:
+        return 0, 0
+
+    current_positive = count_positive_label_files(labels_dir, "cigdet_")
+    if current_positive >= target_positive_images:
+        return 0, current_positive
+
+    added = 0
+    index = 0
+    while current_positive + added < target_positive_images:
+        label = positive_labels[index % len(positive_labels)]
+        image_matches = [p for p in images_dir.glob(f"{label.stem}.*") if p.suffix.lower() in IMAGE_EXTS]
+        if image_matches:
+            image = image_matches[0]
+            dst_stem = f"cigdet_bal_{added:06d}_{label.stem}"
+            shutil.copy2(image, images_dir / f"{dst_stem}{image.suffix.lower()}")
+            shutil.copy2(label, labels_dir / f"{dst_stem}.txt")
+            added += 1
+        index += 1
+
+    return added, current_positive + added
 
 
 def normalize_smoke_annotations(text: str | None) -> str:
@@ -116,6 +155,8 @@ def main() -> None:
 
     counts["smoke_train"] = export_pyro_split(args.pyro_root, out, "train", args.max_smoke_train)
     counts["smoke_val"] = export_pyro_split(args.pyro_root, out, "val", args.max_smoke_val)
+    if args.include_cigarette and args.balance_cigarette_train:
+        counts["cigarette_train_oversample"] = oversample_cigarette_train(out, counts["smoke_train"][1])
 
     source = """Smoking detail YOLO dataset
 
@@ -132,6 +173,8 @@ pyronear/pyro-sdis, https://huggingface.co/datasets/pyronear/pyro-sdis, Apache-2
 Notes:
 Negative samples use intentionally empty YOLO label files.
 Pyro-SDIS smoke labels are kept as class id 1 for configs/smoking_detail.yaml.
+Cigarette positive training images are oversampled by filename duplication to reduce
+class imbalance against the much larger smoke training split.
 """
     (out / "SOURCE_smoking_detail.txt").write_text(source, encoding="utf-8")
 
