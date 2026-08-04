@@ -31,7 +31,7 @@ detail:
   roi_mode: face
   save_focus_crops: true
   crop_scale: 1.10
-  face_crop_scale: 1.10
+  face_crop_scale: 1.22
   depth_crop_scale: 1.35
   max_saved_crops: 300
   model_img_size: 640
@@ -54,7 +54,10 @@ pose:
   hand_to_face_distance_ratio: 0.75
   fingertip_to_mouth_distance_ratio: 0.55
   fingertip_extension_ratio: 0.38
-  face_box_scale: 2.2
+  face_box_scale: 2.55
+  face_box_width_scale: 1.15
+  face_box_height_scale: 1.35
+  face_box_y_offset_ratio: 0.12
   min_valid_keypoints: 8
 
 temporal:

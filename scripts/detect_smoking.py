@@ -156,6 +156,9 @@ def face_box_from_keypoints(
     confs: np.ndarray,
     min_conf: float,
     scale: float,
+    width_scale: float,
+    height_scale: float,
+    y_offset_ratio: float,
     frame_width: int,
     frame_height: int,
 ) -> tuple[int, int, int, int] | None:
@@ -179,8 +182,9 @@ def face_box_from_keypoints(
     cx = (x1 + x2) / 2
     cy = (y1 + y2) / 2
 
-    scaled_w = face_w * scale
-    scaled_h = face_h * scale
+    scaled_w = face_w * scale * width_scale
+    scaled_h = face_h * scale * height_scale
+    cy += scaled_h * y_offset_ratio
     return (
         max(0, int(cx - scaled_w / 2)),
         max(0, int(cy - scaled_h / 2)),
@@ -896,6 +900,9 @@ def analyze_frame(
             kconf[i],
             focus_keypoint_conf,
             pose_cfg.get("face_box_scale", 2.2),
+            pose_cfg.get("face_box_width_scale", 1.0),
+            pose_cfg.get("face_box_height_scale", 1.0),
+            pose_cfg.get("face_box_y_offset_ratio", 0.0),
             frame_width,
             frame_height,
         )
