@@ -1306,10 +1306,12 @@ def main() -> None:
 
     threshold = float(cfg["alarm"].get("pose_only_score_threshold", cfg["alarm"]["smoking_score_threshold"]))
     if cigarette_model_available:
-        threshold = float(cfg["alarm"]["smoking_score_threshold"])
+        threshold = float(cfg["alarm"].get("detail_model_score_threshold", cfg["alarm"]["smoking_score_threshold"]))
 
     min_hand_hits = int(cfg["temporal"]["min_hand_to_mouth_hits"])
     min_cigarette_hits = int(cfg["temporal"]["min_cigarette_hits"])
+    min_detail_trigger_hits = int(cfg["temporal"].get("min_detail_trigger_hits", 1))
+    min_object_detail_ratio = float(cfg["temporal"].get("min_object_detail_ratio", 0.0))
 
     while True:
         ok, frame = cap.read()
@@ -1514,10 +1516,19 @@ def main() -> None:
             if cigarette_model_available:
                 warning_ratio = detail_hits / len(window)
                 depth_ratio = depth_consistent_hits / len(window)
+                object_hits = cigarette_hits + smoke_hits
+                object_detail_ratio = object_hits / max(detail_hits, 1)
                 visual_ratio = max(cigarette_ratio, smoke_ratio)
                 last_temporal_score = 0.20 * warning_ratio + 0.20 * depth_ratio + 0.60 * visual_ratio
-                last_alarm = detail_hits > 0 and (cigarette_hits + smoke_hits) >= min_cigarette_hits
+                last_alarm = (
+                    detail_hits >= min_detail_trigger_hits
+                    and object_hits >= min_cigarette_hits
+                    and object_detail_ratio >= min_object_detail_ratio
+                    and last_temporal_score >= threshold
+                )
             else:
+                object_hits = cigarette_hits
+                object_detail_ratio = 0.0
                 last_temporal_score = (
                     0.42 * hand_ratio + 0.30 * fingertip_ratio + 0.12 * focus_ratio + 0.16 * cigarette_ratio
                 )
@@ -1535,8 +1546,11 @@ def main() -> None:
                         "hand_hits_in_window": hand_hits,
                         "cigarette_hits_in_window": cigarette_hits,
                         "smoke_hits_in_window": smoke_hits,
+                        "object_hits_in_window": object_hits,
+                        "object_detail_ratio_in_window": round(object_detail_ratio, 3),
                         "detail_trigger_hits_in_window": detail_hits,
                         "depth_consistent_hits_in_window": depth_consistent_hits,
+                        "score_threshold": threshold,
                         "mode": "pose_object" if cigarette_model_available else "pose_only",
                     }
                 )
