@@ -167,6 +167,10 @@ def face_box_from_keypoints(
         if point_visible(kpts, confs, idx, min_conf):
             face_points.append(kpts[idx].astype(float))
 
+    inferred_mouth = mouth_point(kpts, confs, min_conf)
+    if inferred_mouth is not None:
+        face_points.append(np.array(inferred_mouth, dtype=float))
+
     if not face_points:
         return None
 
@@ -177,19 +181,32 @@ def face_box_from_keypoints(
     person_w = max(person_x2 - person_x1, 1.0)
     person_h = max(person_y2 - person_y1, 1.0)
 
-    face_w = max(x2 - x1, person_w * 0.12)
-    face_h = max(y2 - y1, person_h * 0.12)
+    face_w = max(x2 - x1, person_w * 0.18)
+    face_h = max(y2 - y1, person_h * 0.22)
     cx = (x1 + x2) / 2
     cy = (y1 + y2) / 2
 
     scaled_w = face_w * scale * width_scale
     scaled_h = face_h * scale * height_scale
     cy += scaled_h * y_offset_ratio
+    fx1 = cx - scaled_w / 2
+    fy1 = cy - scaled_h / 2
+    fx2 = cx + scaled_w / 2
+    fy2 = cy + scaled_h / 2
+
+    if inferred_mouth is not None:
+        mx, my = inferred_mouth
+        lower_margin = max(face_h * scale * height_scale * 0.55, person_h * 0.10)
+        side_margin = max(face_w * scale * width_scale * 0.35, person_w * 0.08)
+        fx1 = min(fx1, mx - side_margin)
+        fx2 = max(fx2, mx + side_margin)
+        fy2 = max(fy2, my + lower_margin)
+
     return (
-        max(0, int(cx - scaled_w / 2)),
-        max(0, int(cy - scaled_h / 2)),
-        min(frame_width - 1, int(cx + scaled_w / 2)),
-        min(frame_height - 1, int(cy + scaled_h / 2)),
+        max(0, int(fx1)),
+        max(0, int(fy1)),
+        min(frame_width - 1, int(fx2)),
+        min(frame_height - 1, int(fy2)),
     )
 
 
